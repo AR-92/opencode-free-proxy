@@ -473,7 +473,11 @@ async function handleChat(req, res) {
       `chat model=${model} stream=${clientStream} status=${status} ${Date.now() - started}ms`
     );
     cors(res);
-    res.writeHead(status, { "Content-Type": ctype });
+    const outHeaders = { "Content-Type": ctype };
+    for (const h of ["retry-after", "x-opencode-log-id"]) {
+      if (upstream.headers[h]) outHeaders[h] = upstream.headers[h];
+    }
+    res.writeHead(status, outHeaders);
     return res.end(text);
   }
 
