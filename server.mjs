@@ -19,7 +19,6 @@
  */
 
 import http from "node:http";
-import https from "node:https";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -161,7 +160,7 @@ function sessionFor(key) {
   return sid;
 }
 
-function upstreamHeaders(session, contentLength) {
+function upstreamHeaders(session) {
   const trace = crypto.randomBytes(16).toString("hex");
   const span = crypto.randomBytes(8).toString("hex");
   return {
@@ -177,46 +176,25 @@ function upstreamHeaders(session, contentLength) {
     "x-session-affinity": session,
     "x-session-id": session,
     Accept: "*/*",
-    "Content-Length": contentLength,
   };
 }
 
 /**
- * POST to the upstream using node:https so we control every header.
- * undici/fetch injects sec-fetch-mode and accept-language, which the free-tier
- * gate does not accept.
+ * POST to the upstream with fetch.
+ *
+ * IMPORTANT: this server must run on Bun. The free tier also fingerprints the
+ * TLS client. OpenCode is a Bun program, so Bun's BoringSSL handshake is
+ * accepted while Node/curl/Python OpenSSL handshakes are rejected with
+ * "FreeUsageLimitError" (429) even when every HTTP header matches.
  */
-function upstreamPost(pathname, bodyObj, session, signal) {
-  const payload = Buffer.from(JSON.stringify(bodyObj));
+async function upstreamPost(pathname, bodyObj, session, signal) {
   const u = new URL(UPSTREAM + pathname);
-  const mod = u.protocol === "https:" ? https : http;
-  return new Promise((resolve, reject) => {
-    const req = mod.request(
-      {
-        protocol: u.protocol,
-        hostname: u.hostname,
-        port: u.port || (u.protocol === "https:" ? 443 : 80),
-        path: u.pathname + u.search,
-        method: "POST",
-        headers: upstreamHeaders(session, payload.length),
-      },
-      (res) => resolve({ status: res.statusCode || 502, headers: res.headers, stream: res })
-    );
-    req.setTimeout(REQUEST_TIMEOUT_MS, () => req.destroy(new Error("upstream timeout")));
-    if (signal) {
-      signal.addEventListener("abort", () => req.destroy(new Error("aborted")), {
-        once: true,
-      });
-    }
-    req.on("error", reject);
-    req.end(payload);
+  return fetch(u, {
+    method: "POST",
+    headers: upstreamHeaders(session),
+    body: JSON.stringify(bodyObj),
+    signal,
   });
-}
-
-async function streamToString(stream) {
-  const chunks = [];
-  for await (const c of stream) chunks.push(c);
-  return Buffer.concat(chunks).toString("utf8");
 }
 
 function normalizeModel(raw) {
@@ -460,13 +438,10 @@ async function handleChat(req, res) {
   }
 
   const status = upstream.status;
-  const ctype = upstream.headers["content-type"] || "application/json";
+  const ctype = upstream.headers.get("content-type") || "application/json";
 
   if (status < 200 || status >= 300) {
-    let text = "";
-    try {
-      text = await streamToString(upstream.stream);
-    } catch {}
+    const text = await upstream.text().catch(() => "");
     clearTimeout(timer);
     req.off("aborted", onClose);
     console.log(
@@ -475,7 +450,8 @@ async function handleChat(req, res) {
     cors(res);
     const outHeaders = { "Content-Type": ctype };
     for (const h of ["retry-after", "x-opencode-log-id"]) {
-      if (upstream.headers[h]) outHeaders[h] = upstream.headers[h];
+      const v = upstream.headers.get(h);
+      if (v) outHeaders[h] = v;
     }
     res.writeHead(status, outHeaders);
     return res.end(text);
@@ -489,26 +465,35 @@ async function handleChat(req, res) {
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
     });
-    upstream.stream.on("data", (c) => res.write(c));
-    upstream.stream.on("end", () => {
+    const reader = upstream.body.getReader();
+    res.on("close", () => {
+      try {
+        reader.cancel();
+      } catch {}
+    });
+    (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && !res.write(Buffer.from(value))) {
+            await new Promise((r) => res.once("drain", r));
+          }
+        }
+      } catch {}
       clearTimeout(timer);
       req.off("aborted", onClose);
       res.end();
       console.log(
         `chat model=${model} stream=true status=200 ${Date.now() - started}ms`
       );
-    });
-    upstream.stream.on("error", () => {
-      clearTimeout(timer);
-      req.off("aborted", onClose);
-      res.end();
-    });
+    })();
     return;
   }
 
   // Non-streaming client: upstream still streams, so aggregate it ourselves.
   try {
-    const text = await streamToString(upstream.stream);
+    const text = await upstream.text();
     clearTimeout(timer);
     req.off("aborted", onClose);
     if (!ctype.includes("text/event-stream")) {

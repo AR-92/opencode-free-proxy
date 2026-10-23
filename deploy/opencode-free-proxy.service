@@ -10,7 +10,7 @@ Environment=PATH=%h/.opencode/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/us
 Environment=HOST=0.0.0.0
 Environment=PORT=8787
 EnvironmentFile=-__DIR__/.env
-ExecStart=/usr/bin/node __DIR__/server.mjs
+ExecStart=/usr/bin/env bun __DIR__/server.mjs
 Restart=on-failure
 RestartSec=3
 StandardOutput=append:__DIR__/proxy.log

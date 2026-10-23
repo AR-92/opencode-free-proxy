@@ -34,11 +34,22 @@ traffic through a local TLS proxy and found the three requirements:
      (30 characters total), otherwise the server returns `403 FreeTierError`.
 2. **`"stream": true`** — non-streaming requests are rejected.
 3. **At least one recognized tool definition** in `tools` (e.g. `read`).
+4. **Bun's TLS fingerprint.** The free tier also fingerprints the TLS
+   handshake. OpenCode is a Bun program, so Bun's BoringSSL handshake is
+   accepted. Node, curl, and Python use OpenSSL and get
+   `429 FreeUsageLimitError` even when every HTTP header and the body match
+   exactly. **The proxy must therefore run on Bun**, not Node.
 
 The proxy adds all of that automatically. It always streams upstream and
 re-assembles the stream into a normal JSON response when the client asked for
 `stream: false`. If the caller sends no tools, a harmless `read` tool is
 injected with `tool_choice: "none"` so normal chat still works.
+
+## Requirements
+
+- [Bun](https://bun.sh) (tested with 1.4.4)
+- OpenCode installed and running (for the live model list; a static list is
+  used otherwise)
 
 The proxy requires an API key on `/v1/models` and `/v1/chat/completions`.
 It is generated on first install and stored in `.env`:
@@ -136,6 +147,9 @@ The `opencode/` prefix is also accepted, e.g.
 ## Install
 
 ```bash
+# Bun is required (the free tier fingerprints the TLS client)
+curl -fsSL https://bun.sh/install | bash
+
 git clone https://github.com/AR-92/opencode-free-proxy.git
 cd opencode-free-proxy
 ./install.sh

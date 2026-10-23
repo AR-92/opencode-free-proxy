@@ -5,6 +5,12 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 mkdir -p "$UNIT_DIR"
 
+if ! command -v bun >/dev/null 2>&1 && [ ! -x "$HOME/.bun/bin/bun" ]; then
+  echo "Bun is required. Install it with:" >&2
+  echo "  curl -fsSL https://bun.sh/install | bash" >&2
+  exit 1
+fi
+
 # Create a client API key on first install.
 if [ ! -f "$DIR/.env" ]; then
   if command -v openssl >/dev/null 2>&1; then
