@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenCode Free Tier OpenAI-compatible proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__DIR__
+Environment=PATH=%h/.opencode/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOST=0.0.0.0
+Environment=PORT=8787
+# Optional: require a key from clients
+# Environment=PROXY_API_KEY=sk-local-change-me
+ExecStart=/usr/bin/node __DIR__/server.mjs
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:__DIR__/proxy.log
+StandardError=inherit
+
+[Install]
+WantedBy=default.target
