@@ -9,8 +9,7 @@ WorkingDirectory=__DIR__
 Environment=PATH=%h/.opencode/bin:%h/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=HOST=0.0.0.0
 Environment=PORT=8787
-# Optional: require a key from clients
-# Environment=PROXY_API_KEY=sk-local-change-me
+EnvironmentFile=-__DIR__/.env
 ExecStart=/usr/bin/node __DIR__/server.mjs
 Restart=on-failure
 RestartSec=3

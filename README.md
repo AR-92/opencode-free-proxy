@@ -7,7 +7,7 @@ models** through a standard **OpenAI-compatible API**.
 
 - **Local base URL:** `http://127.0.0.1:8787/v1`
 - **LAN base URL:** `http://192.168.100.219:8787/v1`
-- **API key:** any value (or set `PROXY_API_KEY` to enforce one)
+- **API key:** required — stored in `.env` as `PROXY_API_KEY`
 - **Models:** `deepseek-v4.1-flash-free`, `glm-5.3-flash-free`, `big-pickle`,
   `flint-40b-free`, `nemotron-3.5-super-vl-free`, `beam-free`,
   `mimo-v2.6-flash-free`, `nemotron-3.5-lightning-free`,
@@ -40,14 +40,34 @@ re-assembles the stream into a normal JSON response when the client asked for
 `stream: false`. If the caller sends no tools, a harmless `read` tool is
 injected with `tool_choice: "none"` so normal chat still works.
 
+The proxy requires an API key on `/v1/models` and `/v1/chat/completions`.
+It is generated on first install and stored in `.env`:
+
+```bash
+cat .env          # PROXY_API_KEY=sk-oc-...
+```
+
+Use it as a normal OpenAI key:
+
+```bash
+export PROXY_API_KEY='sk-oc-...'
+```
+
+To rotate it, edit `.env` and restart the service:
+
+```bash
+systemctl --user restart opencode-free-proxy
+```
+
 ## Quick test
 
 ```bash
-curl http://127.0.0.1:8787/v1/models | jq .
+curl http://127.0.0.1:8787/v1/models \
+  -H "Authorization: Bearer $PROXY_API_KEY" | jq .
 
 curl http://127.0.0.1:8787/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer local' \
+  -H "Authorization: Bearer $PROXY_API_KEY" \
   -d '{
     "model": "deepseek-v4.1-flash-free",
     "messages": [{"role": "user", "content": "Say hello in one line"}],
@@ -60,6 +80,7 @@ Streaming:
 ```bash
 curl -N http://127.0.0.1:8787/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $PROXY_API_KEY" \
   -d '{
     "model": "deepseek-v4.1-flash-free",
     "messages": [{"role": "user", "content": "Count to 5"}],
@@ -70,11 +91,12 @@ curl -N http://127.0.0.1:8787/v1/chat/completions \
 ## OpenAI SDK example
 
 ```python
+import os
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8787/v1",
-    api_key="local",
+    api_key=os.environ["PROXY_API_KEY"],
 )
 
 resp = client.chat.completions.create(
@@ -89,7 +111,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "http://127.0.0.1:8787/v1",
-  apiKey: "local",
+  apiKey: process.env.PROXY_API_KEY,
 });
 
 const resp = await client.chat.completions.create({
